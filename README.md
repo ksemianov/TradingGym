@@ -1,6 +1,7 @@
 ### Install
-pip3 install pandas matplotlib numpy 
-pip3 install .
+`pip3 install pandas matplotlib numpy`
+
+`pip3 install .`
 
 
 ### TODO
