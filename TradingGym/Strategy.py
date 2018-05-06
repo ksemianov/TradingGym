@@ -1,4 +1,4 @@
-from OrderBook import OrderBook
+from TradingGym.OrderBook import OrderBook
 
 class Strategy:
     """

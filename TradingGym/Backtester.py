@@ -1,5 +1,5 @@
-from OrderFlow import OrderFlow
-from OrderBook import OrderBook
+from TradingGym.OrderFlow import OrderFlow
+from TradingGym.OrderBook import OrderBook
 
 class Backtester:
     """
