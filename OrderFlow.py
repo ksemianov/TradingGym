@@ -79,33 +79,3 @@ class OrderFlow:
         ask = ask.sort_values(by = 'Price').values[:5].reshape(1,5,2) # level 2, only 5 best
         bid = bid.sort_values(by = 'Price', ascending = False).values[:5].reshape(1,5,2) # level 2, only 5 best
         return bid, ask
-    
-if __name__ == "__main__":
-    flow = OrderFlow()
-    df =  readTxt('../../Data/Si-3.18/txt/Si-3.18.2017-11-16.OrdLog.{1-OrdLog}.txt')
-    flow.append(df)
-    flow.convert()
-
-    offset = pd.Timedelta('30 min') # don't save 10 mins after first message and 10 mins before last message
-    st = flow.getStart() + offset
-    en = flow.getEnd() - offset
-
-    delta = pd.Timedelta('100 ms')
-
-    bids = np.zeros((0,5,2), dtype='int32')
-    asks = np.zeros((0,5,2), dtype='int32')
-
-    nxt = st
-    step = 1
-    while(nxt < en):
-        if (step % 1000 == 0):
-            print(round((nxt - st) / (en - st) * 100, 3), '%')
-        bid, ask = flow.orderBook(nxt)
-        bids = np.concatenate((bids, bid))
-        asks = np.concatenate((asks, ask))
-        nxt += delta
-        step += 1
-
-    np.save('bids.npy', bids)
-    np.save('asks.npy', asks)
-    
