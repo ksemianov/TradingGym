@@ -1,5 +1,8 @@
 from TradingGym.OrderFlow import OrderFlow
 from TradingGym.OrderBook import OrderBook
+from pandas import Timedelta
+import numpy as np
+import math
 
 class Backtester:
     """
@@ -10,11 +13,12 @@ class Backtester:
         self.flow.df = flow.df.copy(deep=True)
         self.strategy = strategy
         
+        self.ts = []
         self.position = []
         self.r_pnl = []
         self.ur_pnl = []
         self.commission = 0.0002
-        self.max_length = 100000
+        self.max_length = 10**6
         self.trader_book = OrderBook()
         self.strongPriority = False # trader's orders are matched first if True
         
@@ -34,90 +38,139 @@ class Backtester:
         return acc
     
     def unrealizedPnl(self, book):
-        # assuming discharge of position at current best bid-ask
-        if self.position[-1] > 0:
-            return self.position[-1] * book.bestBid()[0]
+        # assuming full discharge of position now
+        position = self.position[-1]
+        ret = 0.0
+        if position > 0:
+            for price, value in sorted(book.book[0].items(), reverse=True):
+                if position <= 0.0:
+                    break
+                position -= value
+                ret += price * max(value, position)
         else:
-            return self.position[-1] * book.bestAsk()[0]
+            for price, value in sorted(book.book[1].items(), reverse=False):
+                if position >= 0.0:
+                    break
+                position += value
+                ret -= price * max(value, -position)
+        return ret
         
-    def run(self):
+    def run(self, max_length = 10**6):
+        self.max_length = max_length
+        
         deals = self.flow.df[self.flow.df.DealId != 0].drop_duplicates('ExchTime')
         book = OrderBook()
         used_idx = 0
-        for name, deal in deals.iterrows():
-            if name > self.max_length:
-                break
-                
-            self.position.append(self.position[-1] if self.position else 0.0)
-            self.r_pnl.append(self.r_pnl[-1] if self.r_pnl else 0.0)
-            
-            idx = name
-            messages = self.flow.df.iloc[used_idx:idx]
-            used_idx = idx
-            book.updateBulk(messages)
-            
-            new_book = self.strategy.action(self.position, 
+        
+        right_before_trading = self.flow.df[self.flow.df.Flags.str.contains('Snapshot')].iloc[-1]
+        trading_start = self.flow.df.iloc[right_before_trading.name + 1]
+        trading_end = self.flow.df.iloc[min(self.max_length + trading_start.name, len(self.flow.df)) - 1]
+        
+        self.ts.append(trading_start.ExchTime)
+        self.position.append(0.0)
+        self.r_pnl.append(0.0)
+        self.ur_pnl.append(0.0)
+        
+        idx = trading_start.name
+        messages = self.flow.df.iloc[used_idx:idx]
+        idx += 1
+        used_idx = idx
+        book.updateBulk(messages)
+        strategy_time = trading_start.ExchTime
+        new_book, sleep = self.strategy.action(self.position[-1], 
                 self.flow.df.iloc[:idx], self.trader_book, book)
-            self.r_pnl[-1] -= self.commissions(self.trader_book, new_book)
+        self.r_pnl[-1] -= self.commissions(self.trader_book, new_book)
+        self.trader_book = new_book
+        
+        total_time = trading_end.ExchTime.value - trading_start.ExchTime.value
+        percentage_done = 0.0
+        
+        print('Started simulation from time: {}'.format(trading_start.ExchTime))
+        print('Planned end time: {}'.format(trading_end.ExchTime))
+
+        for name, deal in deals.iterrows():
+            if name > trading_end.name:
+                break
+            
+            while (deal.ExchTime - strategy_time).value > sleep:
+                strategy_time += Timedelta(np.timedelta64(sleep, 'ms'))
+                
+                self.ts.append(strategy_time)
+                self.position.append(self.position[-1])
+                self.r_pnl.append(self.r_pnl[-1])
+
+                while self.flow.df.iloc[idx].ExchTime < strategy_time:
+                    message = self.flow.df.iloc[idx]
+                    book.update(message)
+                    idx += 1
+                used_idx = idx
+                new_book, sleep = self.strategy.action(self.position[-1], 
+                    self.flow.df.iloc[:idx], self.trader_book, book)
+                self.r_pnl[-1] -= self.commissions(self.trader_book, new_book)
+                self.ur_pnl.append(self.unrealizedPnl(book))
             
             buySell = 'Buy' in self.flow.df.iloc[idx - 1].Flags
-            total_amount = self.flow.df.iloc[idx - 1].Amount
-            price = self.flow.df.iloc[idx - 1].Price
+            deal_amount = self.flow.df.iloc[idx - 1].Amount
+            deal_price = self.flow.df.iloc[idx - 1].Price
+
             if buySell:
                 """Buy trader's asks"""
                 for price, amount in book.book[1].items():
                     bestAsk = new_book.bestAsk()
                     if bestAsk[0] != float('nan') and (bestAsk[0] < price or (bestAsk[0] == price and self.strongPriority)):
-                        if bestAsk[0] >= total_amount:
-                            new_book.book[1][bestAsk[0]] -= total_amount
+                        if bestAsk[1] >= deal_amount:
+                            new_book.book[1][bestAsk[0]] -= deal_amount
                             
-                            self.position[-1] -= total_amount
-                            self.r_pnl[-1] += total_amount * bestAsk[0]
+                            self.position[-1] -= deal_amount
+                            self.r_pnl[-1] += deal_amount * bestAsk[0]
                             
-                            total_amount = 0
+                            deal_amount = 0
                         else:
                             del new_book.book[1][bestAsk[0]]
                             
                             self.position[-1] -= bestAsk[1]
                             self.r_pnl[-1] += bestAsk[1] * bestAsk[0]
                             
-                            total_amount -= bestAsk[1]
+                            deal_amount -= bestAsk[1]
                     else:
-                        total_amount -= amount
-                    if total_amount <= 0:
+                        deal_amount -= amount
+                    if deal_amount <= 0:
                         break
-                if total_amount > 0:
+                if deal_amount > 0:
                     pass # assuming that order was FillOrKill
             else:
                 """Sell trader's bids"""
                 for price, amount in book.book[0].items():
                     bestBid = new_book.bestBid()
                     if bestBid[0] != float('nan') and (bestBid[0] > price or (bestBid[0] == price and self.strongPriority)):
-                        if bestBid[1] >= total_amount:
-                            new_book.book[0][bestBid[0]] -= total_amount
+                        if bestBid[1] >= deal_amount:
+                            new_book.book[0][bestBid[0]] -= deal_amount
                             
-                            self.position[-1] += total_amount
-                            self.r_pnl[-1] -= total_amount * bestBid[0]
+                            self.position[-1] += deal_amount
+                            self.r_pnl[-1] -= deal_amount * bestBid[0]
                             
-                            total_amount = 0
+                            deal_amount = 0
                         else:
                             del new_book.book[0][bestBid[0]]
                             
                             self.position[-1] += bestBid[1]
                             self.r_pnl[-1] -= bestBid[1] * bestBid[0]
                             
-                            total_amount -= bestBid[1]
+                            deal_amount -= bestBid[1]
                     else:
-                        total_amount -= amount
-                    if total_amount <= 0:
+                        deal_amount -= amount
+                    if deal_amount <= 0:
                         break
-                if total_amount > 0:
+                if deal_amount > 0:
                     pass # assuming that order was FillOrKill
             
             self.trader_book = new_book
-            self.ur_pnl.append(self.unrealizedPnl(book))
+            
+            new_percentage_done = 100.0 - (trading_end.ExchTime.value - deal.ExchTime.value) / total_time * 100
+            if (new_percentage_done > percentage_done + 1.0):
+                percentage_done = new_percentage_done
+                print('Done {:.0f}%'.format(percentage_done))
             
         
-        return [deal.ExchTime for name, deal in deals.iterrows()
-                                             if name <= self.max_length], self.position, self.r_pnl, self.ur_pnl
+        return [self.ts, self.position, self.r_pnl, self.ur_pnl]
     
