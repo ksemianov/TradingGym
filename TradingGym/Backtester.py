@@ -67,8 +67,11 @@ class Backtester:
         used_idx = 0
         
         right_before_trading = self.flow.df[self.flow.df.Flags.str.contains('Snapshot')].iloc[-1]
-        trading_start = self.flow.df.iloc[right_before_trading.name + 1]
-        trading_end = self.flow.df.iloc[min(self.max_length + trading_start.name, len(self.flow.df)) - 1]
+        trading_start = self.flow.df[self.flow.df.Flags.str.contains('Add') & (self.flow.df.index > right_before_trading.name)].iloc[0]
+        trading_end = self.flow.df.iloc[
+            min(self.max_length + trading_start.name, len(self.flow.df)) - 1]
+        print('Started simulation from time: {}'.format(trading_start.ExchTime))
+        print('Planned end time: {}'.format(trading_end.ExchTime))
         
         self.ts.append(trading_start.ExchTime)
         self.position.append(0.0)
