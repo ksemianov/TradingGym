@@ -121,7 +121,7 @@ class Backtester:
 
             if buySell:
                 """Buy trader's asks"""
-                for price, amount in book.book[1].items():
+                for price, amount in sorted(book.book[1].items(), reverse=False):
                     bestAsk = new_book.bestAsk()
                     if bestAsk[0] != float('nan') and (bestAsk[0] < price or (bestAsk[0] == price and self.strongPriority)):
                         if bestAsk[1] >= deal_amount:
@@ -146,7 +146,7 @@ class Backtester:
                     pass # assuming that order was FillOrKill
             else:
                 """Sell trader's bids"""
-                for price, amount in book.book[0].items():
+                for price, amount in sorted(book.book[0].items(), reverse=True):
                     bestBid = new_book.bestBid()
                     if bestBid[0] != float('nan') and (bestBid[0] > price or (bestBid[0] == price and self.strongPriority)):
                         if bestBid[1] >= deal_amount:
