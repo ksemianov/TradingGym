@@ -4,6 +4,9 @@ from pandas import Timedelta
 import numpy as np
 import math
 import time
+from tqdm import tqdm
+import sys
+
 
 class Backtester:
     """
@@ -58,8 +61,6 @@ class Backtester:
         return ret
         
     def run(self, max_length = 10**6):
-        timer = time.time()
-        
         self.max_length = max_length
         
         deals = self.flow.df[self.flow.df.DealId != 0].drop_duplicates('ExchTime')
@@ -72,6 +73,8 @@ class Backtester:
             min(self.max_length + trading_start.name, len(self.flow.df)) - 1]
         print('Started simulation from time: {}'.format(trading_start.ExchTime))
         print('Planned end time: {}'.format(trading_end.ExchTime))
+        sys.stdout.flush()
+        pbar = tqdm(total=100)
         
         self.ts.append(trading_start.ExchTime)
         self.position.append(0.0)
@@ -80,7 +83,6 @@ class Backtester:
         
         idx = trading_start.name
         messages = self.flow.df.iloc[used_idx:idx]
-        idx += 1
         used_idx = idx
         book.updateBulk(messages)
         self.price.append((max(book.book[0].keys()) + min(book.book[1].keys())) / 2)
@@ -88,13 +90,11 @@ class Backtester:
         new_book, sleep = self.strategy.action(self.position[-1], 
                 self.flow.df.iloc[:idx], self.trader_book, book)
         self.r_pnl[-1] -= self.commissions(self.trader_book, new_book)
+        new_book = self.finalize_book(book, new_book)
         self.trader_book = new_book
         
         total_time = trading_end.ExchTime.value - trading_start.ExchTime.value
-        percentage_done = 0.0
-        
-        print('Started simulation from time: {}'.format(trading_start.ExchTime))
-        print('Planned end time: {}'.format(trading_end.ExchTime))
+        percentage_done = 0
 
         for name, deal in deals.iterrows():
             if name > trading_end.name:
@@ -176,12 +176,14 @@ class Backtester:
             self.trader_book = new_book
             self.ur_pnl[-1] = self.unrealizedPnl(book)
             
-            new_percentage_done = 100.0 - (trading_end.ExchTime.value - deal.ExchTime.value) / total_time * 100
+            new_percentage_done = int(100 - (trading_end.ExchTime.value - deal.ExchTime.value) / total_time * 100)
             if (new_percentage_done > percentage_done + 1.0):
+                delta = new_percentage_done - percentage_done
                 percentage_done = new_percentage_done
-                print('Done {:.0f}%'.format(percentage_done))
-            
-        print('Elapsed: {:.2f}'.format(time.time() - timer))
-
+                pbar.update(delta)
+                
+        pbar.update(100 - percentage_done)
+        pbar.close()
+        
         return [self.ts, self.position, self.r_pnl, self.ur_pnl, self.price]
     
