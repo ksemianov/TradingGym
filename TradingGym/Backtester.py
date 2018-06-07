@@ -3,6 +3,7 @@ from TradingGym.OrderBook import OrderBook
 from pandas import Timedelta
 import numpy as np
 import math
+import time
 
 class Backtester:
     """
@@ -17,6 +18,7 @@ class Backtester:
         self.position = []
         self.r_pnl = []
         self.ur_pnl = []
+        self.price = []
         self.commission = 0.0002
         self.max_length = 10**6
         self.trader_book = OrderBook()
@@ -56,6 +58,8 @@ class Backtester:
         return ret
         
     def run(self, max_length = 10**6):
+        timer = time.time()
+        
         self.max_length = max_length
         
         deals = self.flow.df[self.flow.df.DealId != 0].drop_duplicates('ExchTime')
@@ -76,6 +80,7 @@ class Backtester:
         idx += 1
         used_idx = idx
         book.updateBulk(messages)
+        self.price.append((max(book.book[0].keys()) + min(book.book[1].keys())) / 2)
         strategy_time = trading_start.ExchTime
         new_book, sleep = self.strategy.action(self.position[-1], 
                 self.flow.df.iloc[:idx], self.trader_book, book)
@@ -98,6 +103,7 @@ class Backtester:
                 self.ts.append(strategy_time)
                 self.position.append(self.position[-1])
                 self.r_pnl.append(self.r_pnl[-1])
+                self.price.append((max(book.book[0].keys()) + min(book.book[1].keys())) / 2)
 
                 while self.flow.df.iloc[idx].ExchTime < strategy_time:
                     message = self.flow.df.iloc[idx]
@@ -165,12 +171,14 @@ class Backtester:
                     pass # assuming that order was FillOrKill
             
             self.trader_book = new_book
+            self.ur_pnl[-1] = self.unrealizedPnl(book)
             
             new_percentage_done = 100.0 - (trading_end.ExchTime.value - deal.ExchTime.value) / total_time * 100
             if (new_percentage_done > percentage_done + 1.0):
                 percentage_done = new_percentage_done
                 print('Done {:.0f}%'.format(percentage_done))
             
-        
-        return [self.ts, self.position, self.r_pnl, self.ur_pnl]
+        print('Elapsed: {:.2f}'.format(time.time() - timer))
+
+        return [self.ts, self.position, self.r_pnl, self.ur_pnl, self.price]
     
