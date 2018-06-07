@@ -59,6 +59,30 @@ class Backtester:
                 position += value
                 ret -= price * max(value, -position)
         return ret
+
+    def finalize_book(self, book, new_book):
+        for price, value in sorted(book.book[1].items(), reverse=False):
+            bestBid = new_book.bestBid()
+            if bestBid[0] < price or math.isnan(bestBid[0]):
+                break
+            if bestBid[1] > value:
+                self.position[-1] += value
+                new_book.book[0][bestBid[0]] -= value
+            else:
+                self.position[-1] += bestBid[1]
+                del new_book.book[0][bestBid[0]]
+        for price, value in sorted(book.book[0].items(), reverse=True):
+            bestAsk = new_book.bestAsk()
+            if bestAsk[0] > price or math.isnan(bestAsk[0]):
+                break
+            if bestAsk[1] > value:
+                self.position[-1] -= value
+                new_book.book[1][bestAsk[0]] -= value
+            else:
+                self.position[-1] -= bestAsk[1]
+                del new_book.book[1][bestAsk[0]]
+
+        return new_book
         
     def run(self, max_length = 10**6):
         self.max_length = max_length
@@ -100,6 +124,7 @@ class Backtester:
             if name > trading_end.name:
                 break
             
+            idx = used_idx
             while (deal.ExchTime - strategy_time).value > sleep:
                 strategy_time += Timedelta(np.timedelta64(sleep, 'ms'))
                 
@@ -108,7 +133,7 @@ class Backtester:
                 self.r_pnl.append(self.r_pnl[-1])
                 self.price.append((max(book.book[0].keys()) + min(book.book[1].keys())) / 2)
 
-                while self.flow.df.iloc[idx].ExchTime < strategy_time:
+                while (self.flow.df.iloc[idx].ExchTime < strategy_time or 'EndOfTransaction' not in self.flow.df.iloc[idx].Flags) and idx < name-1:
                     message = self.flow.df.iloc[idx]
                     book.update(message)
                     idx += 1
@@ -116,11 +141,17 @@ class Backtester:
                 new_book, sleep = self.strategy.action(self.position[-1], 
                     self.flow.df.iloc[:idx], self.trader_book, book)
                 self.r_pnl[-1] -= self.commissions(self.trader_book, new_book)
+                new_book = self.finalize_book(book, new_book)
                 self.ur_pnl.append(self.unrealizedPnl(book))
+
+            assert(used_idx <= name-1)
+            messages = self.flow.df.iloc[used_idx:name-1]
+            used_idx = name-1
+            book.updateBulk(messages)
             
-            buySell = 'Buy' in self.flow.df.iloc[idx - 1].Flags
-            deal_amount = self.flow.df.iloc[idx - 1].Amount
-            deal_price = self.flow.df.iloc[idx - 1].Price
+            buySell = 'Buy' in self.flow.df.iloc[name - 1].Flags
+            deal_amount = self.flow.df.iloc[name - 1].Amount
+            deal_price = self.flow.df.iloc[name - 1].Price
 
             if buySell:
                 """Buy trader's asks"""
@@ -172,7 +203,7 @@ class Backtester:
                         break
                 if deal_amount > 0:
                     pass # assuming that order was FillOrKill
-            
+
             self.trader_book = new_book
             self.ur_pnl[-1] = self.unrealizedPnl(book)
             
