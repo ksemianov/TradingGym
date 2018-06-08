@@ -93,12 +93,18 @@ class Backtester:
         
         right_before_trading = self.flow.df[self.flow.df.Flags.str.contains('Snapshot')].iloc[-1]
         trading_start = self.flow.df[self.flow.df.Flags.str.contains('Add') & (self.flow.df.index > right_before_trading.name)].iloc[0]
+        trading_close_time = trading_start.ExchTime.round('h') + Timedelta('8h45m')
+        trading_close_idx = self.flow.df.ExchTime.searchsorted(trading_close_time)[0] - 1
+        trading_close = self.flow.df.iloc[trading_close_idx]
         trading_end = self.flow.df.iloc[
-            min(self.max_length + trading_start.name, len(self.flow.df)) - 1]
+            min(self.max_length + trading_start.name - 1, trading_close.name)]
+        total_time = trading_end.ExchTime.value - trading_start.ExchTime.value
+        total_idx = trading_end.name - trading_start.name
         print('Started simulation from time: {}'.format(trading_start.ExchTime))
         print('Planned end time: {}'.format(trading_end.ExchTime))
         sys.stdout.flush()
-        pbar = tqdm(total=100)
+        pbar = tqdm(total=total_idx, smoothing=0.01)
+        progress = 0
         
         self.ts.append(trading_start.ExchTime)
         self.position.append(0.0)
@@ -116,9 +122,6 @@ class Backtester:
         self.r_pnl[-1] -= self.commissions(self.trader_book, new_book)
         new_book = self.finalize_book(book, new_book)
         self.trader_book = new_book
-        
-        total_time = trading_end.ExchTime.value - trading_start.ExchTime.value
-        percentage_done = 0
 
         for name, deal in deals.iterrows():
             if name > trading_end.name:
@@ -207,13 +210,9 @@ class Backtester:
             self.trader_book = new_book
             self.ur_pnl[-1] = self.unrealizedPnl(book)
             
-            new_percentage_done = int(100 - (trading_end.ExchTime.value - deal.ExchTime.value) / total_time * 100)
-            if (new_percentage_done > percentage_done + 1.0):
-                delta = new_percentage_done - percentage_done
-                percentage_done = new_percentage_done
-                pbar.update(delta)
+            pbar.update(used_idx - progress)
+            progress = used_idx
                 
-        pbar.update(100 - percentage_done)
         pbar.close()
         
         return [self.ts, self.position, self.r_pnl, self.ur_pnl, self.price]
