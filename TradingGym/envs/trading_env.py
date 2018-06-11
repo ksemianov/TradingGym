@@ -243,8 +243,6 @@ class TradingEnv(gym.Env, utils.EzPickle):
     def step(self, action):
         action = self.convertAction(action)
 
-        # print(self.strategy_time)
-
         self.ts.append(self.strategy_time)
         self.position.append(self.position[-1])
         self.new_book = self.tradersBookFromAction(action)
@@ -272,6 +270,11 @@ class TradingEnv(gym.Env, utils.EzPickle):
         reward = self.r_pnl[-1] + self.ur_pnl[-1]
         done = False if self.steps < self.EPISODE else True
         info = {}
+
+        if self.strategy_time + Timedelta(np.timedelta64(self.sleep, 'ms')) >= self.trading_end.ExchTime:
+            print("Exhausted key: %s" % self.key)
+            self.init(self.hdf_path, self.key)
+            done = True
 
         return observation, reward, done, info
 
