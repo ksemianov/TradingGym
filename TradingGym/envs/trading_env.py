@@ -105,6 +105,12 @@ class TradingEnv(gym.Env, utils.EzPickle):
         self.book.updateBulk(messages)
         self.strategy_time = self.trading_start.ExchTime
 
+    # Gym
+    def convertAction(self, action):
+        delta_bid_idx, delta_ask_idx = divmod(action, 8)
+        delta_bid = self.DELTA_SEQ[delta_bid_idx]
+        delta_ask = self.DELTA_SEQ[delta_ask_idx]
+        return (self.VOLUME, delta_bid, delta_ask)
 
     # Gym-Backtester: Init both Gym and Backtester
     def __init__(self):
@@ -117,6 +123,9 @@ class TradingEnv(gym.Env, utils.EzPickle):
             high=np.array([100.0, 1000.0, 1000.0]),
             dtype=np.float32
         )
+        self.ACTION_SPACE = 64 # volume will stay fixed, but delta bid and delta ask is divided into 8 parts
+        self.DELTA_SEQ = [-10, -5, 0, 5, 10, 50, 100, 1000]
+        self.VOLUME = 10
         # 2 dimensions: position, mid price
         self.observation_space = spaces.Box(
             low=np.array([-1000.0, 10000.0]),
@@ -230,6 +239,10 @@ class TradingEnv(gym.Env, utils.EzPickle):
 
     # Gym: Perform one step
     def step(self, action):
+        action = self.convertAction(action)
+
+        # print(self.strategy_time)
+
         self.ts.append(self.strategy_time)
         self.position.append(self.position[-1])
         self.new_book = self.tradersBookFromAction(action)
