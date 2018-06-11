@@ -84,9 +84,8 @@ class TradingEnv(gym.Env, utils.EzPickle):
         self.deals = self.flow.df[self.flow.df.DealId != 0].drop_duplicates('ExchTime')
         self.book = OrderBook()
         self.used_idx = 0
-        
-        right_before_trading = self.flow.df[self.flow.df.Flags.str.contains('Snapshot')].iloc[-1]
-        self.trading_start = self.flow.df[self.flow.df.Flags.str.contains('Add') & (self.flow.df.index > right_before_trading.name)].iloc[0]
+
+        self.trading_start = self.flow.df[self.flow.df.Flags.str.contains('Add') & ~self.flow.df.Flags.str.contains('Snapshot')].iloc[0]
         trading_close_time = self.trading_start.ExchTime.round('h') + Timedelta('8h45m')
         trading_close_idx = self.flow.df.ExchTime.searchsorted(trading_close_time)[0] - 1
         trading_close = self.flow.df.iloc[trading_close_idx]
