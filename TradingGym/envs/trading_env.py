@@ -134,13 +134,6 @@ class TradingEnv(gym.Env, utils.EzPickle):
         )
 
         # Backtester Init
-        self.hdf_path = '../../Data/Si-3.18/hdf5/Si-3_18.h5'
-        keys = []
-        with pd.HDFStore(self.hdf_path) as store:
-            keys = store.keys()
-        self.flow = OrderFlow()
-        self.flow.df = pd.read_hdf(self.hdf_path, key=keys[0])
-        
         self.ts = []
         self.position = []
         self.r_pnl = []
@@ -151,10 +144,19 @@ class TradingEnv(gym.Env, utils.EzPickle):
         self.trader_book = OrderBook()
         self.strongPriority = False # trader's orders are matched first if True
         self.sleep = 100 # ms per step
+        self.EPISODE = 100
+        
+
+    def init(self, hdf_path, key):
+        self.hdf_path = hdf_path
+        self.key = key
+
+        self.flow = OrderFlow()
+        self.flow.df = pd.read_hdf(self.hdf_path, key=key)
         self.loadData()
 
 
-    # Backtester: Handle deal message | IMPLEMENT
+    # Backtester: Handle deal message
     def handleDeal(self, deal):
         buySell = 'Buy' in deal.Flags
         deal_amount = deal.Amount
@@ -262,19 +264,21 @@ class TradingEnv(gym.Env, utils.EzPickle):
             self.book.update(message)
             self.idx += 1
         self.used_idx = self.idx
-
+        self.steps += 1
 
         position = self.position[-1]
         mid_price = self.price[-1]
         observation = (position, mid_price)
         reward = self.r_pnl[-1] + self.ur_pnl[-1]
-        done = False if self.used_idx <= self.trading_end.name else True
+        done = False if self.steps < self.EPISODE else True
         info = {}
 
         return observation, reward, done, info
 
     # Gym: Reset for new episode
     def reset(self):
+        self.steps = 0
+
         self.ts = []
         self.position = []
         self.r_pnl = []
