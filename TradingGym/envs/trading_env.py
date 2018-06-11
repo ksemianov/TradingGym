@@ -124,7 +124,7 @@ class TradingEnv(gym.Env, utils.EzPickle):
             dtype=np.float32
         )
         self.ACTION_SPACE = 64 # volume will stay fixed, but delta bid and delta ask is divided into 8 parts
-        self.DELTA_SEQ = [-10, -5, 0, 5, 10, 50, 100, 1000]
+        self.DELTA_SEQ = [-5, 0, 5, 10, 50, 100, 200, 500]
         self.VOLUME = 10
         # 2 dimensions: position, mid price
         self.observation_space = spaces.Box(
@@ -230,8 +230,9 @@ class TradingEnv(gym.Env, utils.EzPickle):
         volume, delta_bid, delta_ask = action
 
         new_book = OrderBook()
-        new_book.book[0][max(self.book.book[0].keys()) - delta_bid] = volume
-        new_book.book[1][min(self.book.book[1].keys()) + delta_ask] = volume
+        midPrice = (max(self.book.book[0].keys()) + min(self.book.book[1].keys())) / 2
+        new_book.book[0][midPrice - delta_bid] = volume
+        new_book.book[1][midPrice + delta_ask] = volume
 
         return new_book
 
