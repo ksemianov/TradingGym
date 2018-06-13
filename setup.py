@@ -10,5 +10,6 @@ setup(
     license='Apache 2.0',
     packages=['TradingGym', 'TradingGym.envs'],
     zip_safe=False,
-    install_requires=['gym']
+    install_requires=['gym', 'seaborn', 'matplotlib', 'tqdm', 'pandas',
+     'tables', 'numpy', 'tensorflow', 'keras', 'keras-rl', 'notebook']
 )
