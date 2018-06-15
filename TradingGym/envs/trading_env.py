@@ -268,7 +268,7 @@ class TradingEnv(gym.Env, utils.EzPickle):
         position = self.position[-1]
         mid_price = self.price[-1]
         observation = (position, mid_price)
-        reward = self.r_pnl[-1] + self.ur_pnl[-1]
+        reward = (self.r_pnl[-1] + self.ur_pnl[-1]) - (self.r_pnl[-2] + self.ur_pnl[-2])
         done = False if self.steps < self.EPISODE else True
         info = {}
 
